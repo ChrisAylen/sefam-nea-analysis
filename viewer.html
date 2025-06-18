@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CPAP Session Viewer</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 2em; background: #f8f9fa; }
+    #plot, #leakPlot, #eventPlot { width: 100%; max-width: 1000px; margin: auto; margin-bottom: 3em; }
+    input[type="file"], select { margin-bottom: 1em; display: block; }
+    table { border-collapse: collapse; margin-top: 2em; }
+    th, td { border: 1px solid #ccc; padding: 0.4em; }
+    th { background: #eee; }
+  </style>
+</head>
+<body>
+  <h1>CPAP Session Viewer</h1>
+  <p>Select your SD card folder:</p>
+  <input type="file" id="folderInput" webkitdirectory directory multiple>
+  <label for="nightSelect">Choose a night:</label>
+  <select id="nightSelect"></select>
+  <label for="smoothingSelect">Smoothing:</label>
+  <select id="smoothingSelect">
+    <option value="1">Raw</option>
+    <option value="60">1 Minute Avg</option>
+    <option value="300">5 Minute Avg</option>
+    <option value="3600">1 Hour Avg</option>
+  </select>
+  <div id="plot"></div>
+  <div id="leakPlot"></div>
+  <div id="eventPlot"></div>
+
+  <script>
+    let sessionDataMap = {};
+    let nightGroupedData = {};
+    let config = {
+      minPressure: 4,
+      maxPressure: 15,
+      maxJump: 3
+    };
+
+    function formatDate(dateStr) {
+      const d = new Date(dateStr);
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+    }
+
+    function getLogicalNight(date) {
+      const d = new Date(date);
+      if (d.getHours() < 12) d.setDate(d.getDate() - 1);
+      return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+    }
+
+    function isValidSession(session) {
+      const p = session.pressure;
+      if (p.length < 90) return false;
+      const validPressures = p.filter(x => x !== null);
+      const mean = validPressures.reduce((a, b) => a + b, 0) / validPressures.length;
+      const variance = validPressures.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / validPressures.length;
+      const stdDev = Math.sqrt(variance);
+      if (stdDev < 1.5) return false;
+      const clusteredRange = validPressures.filter(v => v >= 140 && v <= 145).length;
+      if (clusteredRange / validPressures.length > 0.85) return false;
+      return true;
+    }
+
+    function mergeSessionsByNight(night) {
+      const sessions = nightGroupedData[night];
+      let merged = { pressure: [], leak: [], events: [], metadata: sessions[0].metadata };
+      for (const s of sessions) {
+        merged.pressure = merged.pressure.concat(s.pressure);
+        merged.leak = merged.leak.concat(s.leak);
+        if (s.events) merged.events = merged.events.concat(s.events);
+      }
+      return merged;
+    }
+
+    function renderPlot(data) {
+      const pressureRate = data.metadata.pressure_rate_hz;
+      const leakRate = data.metadata.leak_rate_hz;
+      const smoothingInterval = parseInt(document.getElementById('smoothingSelect').value, 10);
+      const pressureWindow = smoothingInterval * pressureRate;
+      const leakWindow = smoothingInterval * leakRate;
+
+      const rawPressure = data.pressure.map(p => p !== null ? p / 10 : null);
+      const rawLeak = data.leak;
+
+      const smoothedPressure = [];
+      const smoothedLeak = [];
+      const pressureTime = [];
+      const leakTime = [];
+
+      for (let i = 0; i < rawPressure.length; i += pressureWindow) {
+        const window = rawPressure.slice(i, i + pressureWindow).filter(v => v !== null);
+        if (window.length === 0) continue;
+        const avg = window.reduce((a, b) => a + b, 0) / window.length;
+        smoothedPressure.push(avg);
+        pressureTime.push(i / pressureRate);
+      }
+
+      for (let i = 0; i < rawLeak.length; i += leakWindow) {
+        const window = rawLeak.slice(i, i + leakWindow).filter(v => v !== null);
+        if (window.length === 0) continue;
+        const avg = window.reduce((a, b) => a + b, 0) / window.length;
+        smoothedLeak.push(avg);
+        leakTime.push(i / leakRate);
+      }
+
+      Plotly.newPlot('plot', [{ x: pressureTime, y: smoothedPressure, name: `Pressure (${data.metadata.pressure_unit})`, type: 'scatter', mode: 'lines', line: { color: 'blue' }}], { title: `Pressure - ${data.metadata.logicalNight}`, xaxis: { title: 'Time (seconds)' }, yaxis: { title: `Pressure (${data.metadata.pressure_unit})` } });
+
+      Plotly.newPlot('leakPlot', [{ x: leakTime, y: smoothedLeak, name: `Leak (${data.metadata.leak_unit})`, type: 'scatter', mode: 'lines', line: { color: 'red' }}], { title: `Leak - ${data.metadata.logicalNight}`, xaxis: { title: 'Time (seconds)' }, yaxis: { title: `Leak (${data.metadata.leak_unit})` } });
+
+      if (data.events && data.events.length > 0) {
+        const sessionDuration = data.events.length;
+        const totalHours = Math.ceil(sessionDuration / 3600);
+        const eventsPerHour = [];
+        const KNOWN_EVENT_CODES = [1, 2, 3];
+
+        for (let h = 0; h < totalHours; h++) {
+          const startIdx = h * 3600;
+          const endIdx = Math.min(startIdx + 3600, sessionDuration);
+          let hourlyEvents = 0;
+
+          for (let i = startIdx + 1; i < endIdx; i++) {
+            const prev = data.events[i - 1];
+            const curr = data.events[i];
+            if (KNOWN_EVENT_CODES.includes(curr) && !KNOWN_EVENT_CODES.includes(prev)) {
+              hourlyEvents++;
+            }
+          }
+
+          const hourDuration = (endIdx - startIdx) / 60 / 60;
+          const normalizedCount = hourDuration > 0 ? (hourlyEvents / hourDuration).toFixed(2) : 0;
+          eventsPerHour.push(parseFloat(normalizedCount));
+        }
+
+        const labels = Array.from({ length: eventsPerHour.length }, (_, i) => `Hour ${i + 1}`);
+        Plotly.newPlot('eventPlot', [{ x: labels, y: eventsPerHour, type: 'bar', marker: { color: 'purple' }}], { title: `Events per Hour - ${data.metadata.logicalNight}`, xaxis: { title: 'Session Hour' }, yaxis: { title: 'Events/Hour' } });
+      } else {
+        document.getElementById('eventPlot').innerHTML = '';
+      }
+    }
+
+    document.getElementById('folderInput').addEventListener('change', async function (evt) {
+      const files = Array.from(evt.target.files);
+      const sessions = {};
+      for (const file of files) {
+        const pathParts = file.webkitRelativePath.split('/');
+        const folderName = pathParts[pathParts.length - 2];
+        if (!/^DATA_\d+$/.test(folderName)) continue;
+        if (!sessions[folderName]) sessions[folderName] = {};
+        if (file.name.endsWith('.PRE')) sessions[folderName].pre = file;
+        if (file.name.endsWith('.LK')) sessions[folderName].lk = file;
+        if (file.name.endsWith('.STS')) sessions[folderName].sts = file;
+      }
+      const nightSelect = document.getElementById('nightSelect');
+      nightSelect.innerHTML = '';
+      sessionDataMap = {};
+      nightGroupedData = {};
+
+      for (const name of Object.keys(sessions)) {
+        if (!sessions[name].pre || !sessions[name].lk) continue;
+        const preBuf = await sessions[name].pre.arrayBuffer();
+        const lkBuf = await sessions[name].lk.arrayBuffer();
+        const pre = new Uint8Array(preBuf);
+        const lk = new Uint8Array(lkBuf);
+        let sts = [];
+        if (sessions[name].sts) {
+          const stsBuf = await sessions[name].sts.arrayBuffer();
+          sts = Array.from(new Uint8Array(stsBuf));
+        }
+        const sessionTimestamp = sessions[name].pre.lastModified;
+        const sessionDate = new Date(sessionTimestamp);
+        const sessionJson = {
+          metadata: {
+            device: "Sefam Néa Auto",
+            date: sessionDate.toISOString(),
+            label: name,
+            logicalNight: getLogicalNight(sessionDate),
+            pressure_unit: "cmH2O",
+            leak_unit: "L/min",
+            pressure_rate_hz: 5,
+            leak_rate_hz: 1
+          },
+          pressure: Array.from(pre).map(p => {
+            const scaled = p / 10;
+            return (scaled >= config.minPressure && scaled <= config.maxPressure) ? p : null;
+          }),
+          leak: Array.from(lk),
+          events: sts
+        };
+        if (!isValidSession(sessionJson)) continue;
+        sessionDataMap[name] = sessionJson;
+        if (!nightGroupedData[sessionJson.metadata.logicalNight]) {
+          nightGroupedData[sessionJson.metadata.logicalNight] = [];
+        }
+        nightGroupedData[sessionJson.metadata.logicalNight].push(sessionJson);
+      }
+
+      for (const night of Object.keys(nightGroupedData).sort()) {
+        const option = document.createElement('option');
+        option.value = night;
+        option.textContent = formatDate(night);
+        nightSelect.appendChild(option);
+      }
+
+      if (nightSelect.options.length > 0) {
+        nightSelect.value = nightSelect.options[0].value;
+        renderPlot(mergeSessionsByNight(nightSelect.value));
+      }
+    });
+
+    document.getElementById('nightSelect').addEventListener('change', function () {
+      const selected = this.value;
+      if (nightGroupedData[selected]) {
+        renderPlot(mergeSessionsByNight(selected));
+      }
+    });
+
+    document.getElementById('smoothingSelect').addEventListener('change', function () {
+      const selected = document.getElementById('nightSelect').value;
+      if (nightGroupedData[selected]) {
+        renderPlot(mergeSessionsByNight(selected));
+      }
+    });
+  </script>
+</body>
+</html>
