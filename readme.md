@@ -115,4 +115,4 @@ Created as a proof-of-concept for offline CPAP session visualisation using brows
 
 ## Disclaimer
 
-This viewer is not a medical tool. For clinical insights, consult your healthcare provider or official software from Sefam.
+This viewer is not a medical tool. For clinical insights, consult your healthcare provider or official software from Sefam.  The results may not be right.  Use at your own risk.
