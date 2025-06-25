@@ -6,6 +6,12 @@
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     body { font-family: sans-serif; margin: 2em; background: #f8f9fa; }
+    #dashboard { background: white; border-radius: 8px; padding: 1.5em; margin-bottom: 2em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    #dashboard h2 { margin-top: 0; color: #333; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1em; margin-top: 1em; }
+    .stat-card { background: #f8f9fa; border-radius: 6px; padding: 1em; text-align: center; border: 1px solid #e9ecef; }
+    .stat-value { font-size: 1.5em; font-weight: bold; color: #007bff; }
+    .stat-label { font-size: 0.9em; color: #666; margin-top: 0.5em; }
     #plot, #leakPlot, #eventPlot { width: 100%; max-width: 1000px; margin: auto; margin-bottom: 3em; }
     input[type="file"], select { margin-bottom: 1em; display: block; }
     table { border-collapse: collapse; margin-top: 2em; }
@@ -15,6 +21,29 @@
 </head>
 <body>
   <h1>CPAP Session Viewer</h1>
+  
+  <div id="dashboard" style="display: none;">
+    <h2>Dashboard</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="avgPressureWeek">-</div>
+        <div class="stat-label">Avg Pressure (Last 7 Days)<br>cmH2O</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="avgPressureAll">-</div>
+        <div class="stat-label">Avg Pressure (All Time)<br>cmH2O</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="avgLeakWeek">-</div>
+        <div class="stat-label">Avg Leak (Last 7 Days)<br>L/min</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="avgLeakAll">-</div>
+        <div class="stat-label">Avg Leak (All Time)<br>L/min</div>
+      </div>
+    </div>
+  </div>
+
   <p>Select your SD card folder:</p>
   <input type="file" id="folderInput" webkitdirectory directory multiple>
   <label for="nightSelect">Choose a night:</label>
@@ -72,6 +101,55 @@
         if (s.events) merged.events = merged.events.concat(s.events);
       }
       return merged;
+    }
+
+    function calculateDashboardStats() {
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      
+      let allPressures = [];
+      let allLeaks = [];
+      let weekPressures = [];
+      let weekLeaks = [];
+
+      for (const night of Object.keys(nightGroupedData)) {
+        const nightDate = new Date(night);
+        const mergedData = mergeSessionsByNight(night);
+        
+        // Get valid pressure values (convert from raw to cmH2O)
+        const validPressures = mergedData.pressure
+          .filter(p => p !== null)
+          .map(p => p / 10);
+        
+        // Get valid leak values
+        const validLeaks = mergedData.leak.filter(l => l !== null);
+        
+        allPressures = allPressures.concat(validPressures);
+        allLeaks = allLeaks.concat(validLeaks);
+        
+        if (nightDate >= weekAgo) {
+          weekPressures = weekPressures.concat(validPressures);
+          weekLeaks = weekLeaks.concat(validLeaks);
+        }
+      }
+
+      // Calculate averages
+      const avgPressureWeek = weekPressures.length > 0 ? 
+        (weekPressures.reduce((a, b) => a + b, 0) / weekPressures.length).toFixed(1) : '-';
+      const avgPressureAll = allPressures.length > 0 ? 
+        (allPressures.reduce((a, b) => a + b, 0) / allPressures.length).toFixed(1) : '-';
+      const avgLeakWeek = weekLeaks.length > 0 ? 
+        (weekLeaks.reduce((a, b) => a + b, 0) / weekLeaks.length).toFixed(1) : '-';
+      const avgLeakAll = allLeaks.length > 0 ? 
+        (allLeaks.reduce((a, b) => a + b, 0) / allLeaks.length).toFixed(1) : '-';
+
+      // Update dashboard
+      document.getElementById('avgPressureWeek').textContent = avgPressureWeek;
+      document.getElementById('avgPressureAll').textContent = avgPressureAll;
+      document.getElementById('avgLeakWeek').textContent = avgLeakWeek;
+      document.getElementById('avgLeakAll').textContent = avgLeakAll;
+      
+      document.getElementById('dashboard').style.display = 'block';
     }
 
     function renderPlot(data) {
@@ -206,6 +284,7 @@
       if (nightSelect.options.length > 0) {
         nightSelect.value = nightSelect.options[0].value;
         renderPlot(mergeSessionsByNight(nightSelect.value));
+        calculateDashboardStats();
       }
     });
 
