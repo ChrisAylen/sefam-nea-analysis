@@ -5,59 +5,252 @@
   <title>CPAP Session Viewer</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 2em; background: #f8f9fa; }
-    #dashboard { background: white; border-radius: 8px; padding: 1.5em; margin-bottom: 2em; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    #dashboard h2 { margin-top: 0; color: #333; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1em; margin-top: 1em; }
-    .stat-card { background: #f8f9fa; border-radius: 6px; padding: 1em; text-align: center; border: 1px solid #e9ecef; }
-    .stat-value { font-size: 1.5em; font-weight: bold; color: #007bff; }
-    .stat-label { font-size: 0.9em; color: #666; margin-top: 0.5em; }
-    #plot, #leakPlot, #eventPlot { width: 100%; max-width: 1000px; margin: auto; margin-bottom: 3em; }
-    input[type="file"], select { margin-bottom: 1em; display: block; }
-    table { border-collapse: collapse; margin-top: 2em; }
-    th, td { border: 1px solid #ccc; padding: 0.4em; }
-    th { background: #eee; }
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+      margin: 0; 
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      color: white;
+      font-size: 2.5rem;
+      font-weight: 300;
+      margin-bottom: 2rem;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    #dashboard { 
+      background: white; 
+      border-radius: 16px; 
+      padding: 2rem; 
+      margin-bottom: 2rem; 
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      backdrop-filter: blur(10px);
+    }
+    #dashboard h2 { 
+      margin-top: 0; 
+      color: #2c3e50; 
+      font-size: 1.8rem;
+      font-weight: 600;
+    }
+    .stats-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+      gap: 1.5rem; 
+      margin-top: 1.5rem; 
+    }
+    .stat-card { 
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
+      border-radius: 12px; 
+      padding: 1.5rem; 
+      text-align: center; 
+      border: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+    }
+    .stat-value { 
+      font-size: 2rem; 
+      font-weight: 700; 
+      color: #667eea;
+      margin-bottom: 0.5rem;
+    }
+    .stat-label { 
+      font-size: 0.9rem; 
+      color: #6c757d; 
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .upload-section {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    .upload-area {
+      border: 2px dashed #667eea;
+      border-radius: 12px;
+      padding: 3rem 2rem;
+      text-align: center;
+      background: linear-gradient(135deg, #f8f9ff 0%, #e6f0ff 100%);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+    .upload-area:hover {
+      border-color: #5a67d8;
+      background: linear-gradient(135deg, #f0f4ff 0%, #dde7ff 100%);
+      transform: translateY(-2px);
+    }
+    .upload-area.dragover {
+      border-color: #4c51bf;
+      background: linear-gradient(135deg, #e6f0ff 0%, #d4e7ff 100%);
+      transform: scale(1.02);
+    }
+    .upload-icon {
+      font-size: 3rem;
+      color: #667eea;
+      margin-bottom: 1rem;
+    }
+    .upload-text {
+      font-size: 1.2rem;
+      color: #4a5568;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+    .upload-subtext {
+      font-size: 0.9rem;
+      color: #718096;
+    }
+    .controls {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    label {
+      font-weight: 600;
+      color: #2c3e50;
+      font-size: 0.9rem;
+    }
+    select {
+      padding: 0.75rem 1rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      background: white;
+      font-size: 1rem;
+      color: #2c3e50;
+      transition: border-color 0.2s ease;
+      min-width: 200px;
+    }
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .plot-container {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    #plot, #leakPlot, #eventPlot { 
+      width: 100%; 
+      margin-bottom: 1rem;
+    }
+    table { 
+      border-collapse: collapse; 
+      margin-top: 2rem; 
+      width: 100%;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+    }
+    th, td { 
+      padding: 1rem; 
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    th { 
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      font-weight: 600;
+      color: #2c3e50;
+    }
+    @media (max-width: 768px) {
+      .container { padding: 1rem; }
+      h1 { font-size: 2rem; }
+      .controls { flex-direction: column; align-items: stretch; }
+      .stats-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>CPAP Session Viewer</h1>
-  
-  <div id="dashboard" style="display: none;">
-    <h2>Dashboard</h2>
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-value" id="avgPressureWeek">-</div>
-        <div class="stat-label">Avg Pressure (Last 7 Days)<br>cmH2O</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="avgPressureAll">-</div>
-        <div class="stat-label">Avg Pressure (All Time)<br>cmH2O</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="avgLeakWeek">-</div>
-        <div class="stat-label">Avg Leak (Last 7 Days)<br>L/min</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="avgLeakAll">-</div>
-        <div class="stat-label">Avg Leak (All Time)<br>L/min</div>
+  <div class="container">
+    <h1>CPAP Session Viewer</h1>
+    
+    <div id="dashboard" style="display: none;">
+      <h2>Dashboard</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="avgPressureWeek">-</div>
+          <div class="stat-label">Avg Pressure (Last 7 Days)<br>cmH2O</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="avgPressureAll">-</div>
+          <div class="stat-label">Avg Pressure (All Time)<br>cmH2O</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="avgLeakWeek">-</div>
+          <div class="stat-label">Avg Leak (Last 7 Days)<br>L/min</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="avgLeakAll">-</div>
+          <div class="stat-label">Avg Leak (All Time)<br>L/min</div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <p>Select your SD card folder:</p>
-  <input type="file" id="folderInput" webkitdirectory directory multiple>
-  <label for="nightSelect">Choose a night:</label>
-  <select id="nightSelect"></select>
-  <label for="smoothingSelect">Smoothing:</label>
-  <select id="smoothingSelect">
-    <option value="1">Raw</option>
-    <option value="60">1 Minute Avg</option>
-    <option value="300">5 Minute Avg</option>
-    <option value="3600">1 Hour Avg</option>
-  </select>
-  <div id="plot"></div>
-  <div id="leakPlot"></div>
-  <div id="eventPlot"></div>
+    <div class="upload-section">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">Drag and drop your CPAP data folder</div>
+        <div class="upload-subtext">Drag your SD card folder here to load data (no clicking required)</div>
+      </div>
+    </div>
+
+    <div class="controls" id="controls" style="display: none;">
+      <div class="control-group">
+        <label for="nightSelect">Choose a night:</label>
+        <select id="nightSelect"></select>
+      </div>
+      <div class="control-group">
+        <label for="smoothingSelect">Smoothing:</label>
+        <select id="smoothingSelect">
+          <option value="1">Raw</option>
+          <option value="60" selected>1 Minute Avg</option>
+          <option value="300">5 Minute Avg</option>
+          <option value="3600">1 Hour Avg</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="plot-container" id="plotContainer" style="display: none;">
+      <div id="plot"></div>
+    </div>
+    
+    <div class="plot-container" id="leakPlotContainer" style="display: none;">
+      <div id="leakPlot"></div>
+    </div>
+    
+    <div class="plot-container" id="eventPlotContainer" style="display: none;">
+      <div id="eventPlot"></div>
+    </div>
+  </div>
 
   <script>
     let sessionDataMap = {};
@@ -218,8 +411,82 @@
       }
     }
 
-    document.getElementById('folderInput').addEventListener('change', async function (evt) {
-      const files = Array.from(evt.target.files);
+    // Add drag and drop event listeners
+    const uploadArea = document.getElementById('uploadArea');
+    
+    uploadArea.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', async function(e) {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      
+      const items = e.dataTransfer.items;
+      const files = [];
+      
+      // Process all dropped items
+      const promises = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            promises.push(traverseFileTree(entry, files, ''));
+          }
+        }
+      }
+      
+      // Wait for all file traversal to complete
+      await Promise.all(promises);
+      
+      if (files.length > 0) {
+        processFiles(files);
+      } else {
+        alert('No files found. Please drag a folder containing CPAP data files.');
+      }
+    });
+    
+    
+    async function traverseFileTree(item, files, path = '') {
+      return new Promise((resolve, reject) => {
+        if (item.isFile) {
+          item.file((file) => {
+            // Set the relative path for the file
+            Object.defineProperty(file, 'webkitRelativePath', {
+              value: path + file.name,
+              writable: false
+            });
+            files.push(file);
+            resolve();
+          }, reject);
+        } else if (item.isDirectory) {
+          const dirReader = item.createReader();
+          dirReader.readEntries(async (entries) => {
+            try {
+              const promises = [];
+              for (const entry of entries) {
+                promises.push(traverseFileTree(entry, files, path + item.name + '/'));
+              }
+              await Promise.all(promises);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          }, reject);
+        } else {
+          resolve();
+        }
+      });
+    }
+    
+    async function processFiles(files) {
       const sessions = {};
       for (const file of files) {
         const pathParts = file.webkitRelativePath.split('/');
@@ -285,8 +552,14 @@
         nightSelect.value = nightSelect.options[0].value;
         renderPlot(mergeSessionsByNight(nightSelect.value));
         calculateDashboardStats();
+        
+        // Show the controls and plot containers
+        document.getElementById('controls').style.display = 'flex';
+        document.getElementById('plotContainer').style.display = 'block';
+        document.getElementById('leakPlotContainer').style.display = 'block';
+        document.getElementById('eventPlotContainer').style.display = 'block';
       }
-    });
+    }
 
     document.getElementById('nightSelect').addEventListener('change', function () {
       const selected = this.value;
